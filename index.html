@@ -47,18 +47,15 @@ function startScan(jenis){
       }
     },
     locator: {
-      patchSize: "medium",
+      patchSize: "large",
       halfSample: false
     },
     numOfWorkers: 2,
     frequency: 10,
     decoder: {
-      readers: [
-        "code_128_reader",
-        "code_39_reader",
-        "ean_reader",
-        "ean_8_reader"
-      ],
+     readers: [
+  "code_128_reader"
+],
       multiple: false
     },
     locate: true
@@ -79,7 +76,9 @@ Quagga.onDetected(function(data){
     : "";
 
   if(!code) return;
-
+  if(!/^ST\d{5,}$/i.test(code)){
+  return;
+}
   const m = code.match(/ST\d+/);
   if(m) code = m[0];
 
