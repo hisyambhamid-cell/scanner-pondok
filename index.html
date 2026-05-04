@@ -2,73 +2,96 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>E-SECURE Scanner</title>
-<script src="https://unpkg.com/@zxing/browser@latest"></script>
+<title>E-SECURE Barcode Scanner</title>
+<script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.min.js"></script>
 <style>
-body{margin:0;font-family:Arial;background:#020617;color:white;text-align:center;padding:16px}
-h2{margin:10px 0 4px}
-.sub{color:#93c5fd;font-weight:bold;margin-bottom:12px}
-video{width:96%;max-width:520px;margin-top:14px;border-radius:16px;border:3px solid #38bdf8}
-button{margin:8px;padding:16px 22px;border:0;border-radius:14px;font-size:16px;font-weight:900}
+body{margin:0;background:#020617;color:white;font-family:Arial;text-align:center;padding:16px}
+h2{margin:10px 0}
+button{padding:15px 22px;margin:8px;border:0;border-radius:14px;font-weight:900;font-size:16px}
 .out{background:#22c55e;color:#052e16}
 .in{background:#f59e0b;color:#451a03}
-#result{margin-top:14px;padding:14px;border-radius:14px;background:#111827;font-size:18px;font-weight:900;white-space:pre-line}
+#reader{width:96%;max-width:520px;height:300px;margin:15px auto;border:3px solid #38bdf8;border-radius:16px;overflow:hidden}
+#result{background:#111827;padding:14px;border-radius:14px;font-weight:900;white-space:pre-line}
 </style>
 </head>
 <body>
 
 <h2>E-SECURE SCANNER</h2>
-<div class="sub">MRSM BETONG • Barcode Mode</div>
+<div>MRSM BETONG • Barcode Mode</div>
 
 <button class="out" onclick="startScan('KELUAR')">SCAN KELUAR</button>
 <button class="in" onclick="startScan('MASUK')">SCAN MASUK</button>
 
-<video id="video" muted playsinline></video>
+<div id="reader"></div>
 <div id="result">Sedia untuk scan.</div>
 
 <script>
-let busy = false;
-let controls = null;
 let mode = "KELUAR";
+let busy = false;
 
-async function startScan(jenis){
+function startScan(jenis){
   mode = jenis;
   busy = false;
-  document.getElementById("result").innerText =
-    "Kamera dibuka...\nFokus pada barcode bawah kad sahaja.";
+  document.getElementById("result").innerText = "Kamera dibuka... fokus pada barcode.";
 
-  try{
-    if(controls){ controls.stop(); controls = null; }
+  Quagga.stop();
 
-    const reader = new ZXingBrowser.BrowserMultiFormatReader();
-    const devices = await ZXingBrowser.BrowserCodeReader.listVideoInputDevices();
-
-    let deviceId = undefined;
-    if(devices && devices.length){
-      const back = devices.find(d => /back|rear|environment/i.test(d.label || ""));
-      deviceId = back ? back.deviceId : devices[devices.length - 1].deviceId;
+  Quagga.init({
+    inputStream: {
+      type: "LiveStream",
+      target: document.querySelector("#reader"),
+      constraints: {
+        facingMode: "environment",
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    },
+    locator: {
+      patchSize: "medium",
+      halfSample: false
+    },
+    numOfWorkers: 2,
+    frequency: 10,
+    decoder: {
+      readers: [
+        "code_128_reader",
+        "code_39_reader",
+        "ean_reader",
+        "ean_8_reader"
+      ],
+      multiple: false
+    },
+    locate: true
+  }, function(err){
+    if(err){
+      document.getElementById("result").innerText = "❌ Kamera gagal:\n" + err;
+      return;
     }
-
-    controls = await reader.decodeFromVideoDevice(deviceId, "video", (result, err)=>{
-      if(!result || busy) return;
-      busy = true;
-
-      let code = String(result.getText() || "").trim().toUpperCase();
-      const m = code.match(/ST\d+/);
-      if(m) code = m[0];
-
-      document.getElementById("result").innerText =
-        "✅ SCAN BERJAYA\nNO MAKTAB: " + code + "\nMODE: " + mode;
-
-      beep();
-      setTimeout(()=>{ busy = false; },1500);
-    });
-
-  }catch(e){
-    document.getElementById("result").innerText =
-      "❌ Kamera gagal dibuka.\n" + (e.message || e);
-  }
+    Quagga.start();
+  });
 }
+
+Quagga.onDetected(function(data){
+  if(busy) return;
+
+  let code = data && data.codeResult && data.codeResult.code
+    ? String(data.codeResult.code).trim().toUpperCase()
+    : "";
+
+  if(!code) return;
+
+  const m = code.match(/ST\d+/);
+  if(m) code = m[0];
+
+  busy = true;
+
+  document.getElementById("result").innerText =
+    "✅ SCAN BERJAYA\nNO MAKTAB: " + code + "\nMODE: " + mode;
+
+  beep();
+
+  setTimeout(()=>{ busy = false; },1500);
+});
 
 function beep(){
   const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -84,5 +107,6 @@ function beep(){
   osc.stop(ctx.currentTime + .14);
 }
 </script>
+
 </body>
 </html>
