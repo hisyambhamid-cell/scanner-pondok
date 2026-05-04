@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>E-SECURE Scanner</title>
+
+<script src="https://unpkg.com/@zxing/browser@latest"></script>
+
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:Arial,sans-serif;
+  background:radial-gradient(circle at top left,#155e75,#020617 55%);
+  color:white;
+  min-height:100vh;
+  padding:16px;
+}
+.wrap{max-width:560px;margin:auto}
+.hero{
+  background:linear-gradient(135deg,#07111f,#12395a,#1e5d89,#08111f);
+  border:2px solid rgba(148,163,184,.45);
+  border-radius:26px;
+  padding:16px;
+  text-align:center;
+  margin-bottom:16px;
+}
+h1{font-size:22px;margin:0;letter-spacing:1.2px;font-weight:900}
+.sub{margin-top:6px;color:#dbeafe;font-weight:800}
+.card{
+  background:rgba(2,6,23,.86);
+  border:2px solid rgba(148,163,184,.42);
+  border-radius:28px;
+  padding:22px 18px;
+  text-align:center;
+}
+.scanLogo{
+  width:100px;height:100px;object-fit:contain;
+  margin-bottom:18px;
+  filter:drop-shadow(0 0 10px rgba(255,255,255,.35));
+}
+.modeTitle{
+  color:#cbd5e1;font-size:13px;font-weight:1000;
+  letter-spacing:3px;margin-bottom:8px;
+}
+.mode{
+  display:inline-block;
+  padding:9px 26px;
+  border-radius:999px;
+  background:#0f172a;
+  border:1px solid rgba(150,200,255,.45);
+  font-size:20px;
+  font-weight:1000;
+  margin-bottom:18px;
+}
+.btnGrid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+}
+button{
+  border:0;
+  border-radius:20px;
+  padding:17px;
+  font-size:17px;
+  font-weight:1000;
+  cursor:pointer;
+}
+.out{background:linear-gradient(135deg,#22c55e,#16a34a);color:#052e16}
+.in{background:linear-gradient(135deg,#f59e0b,#d97706);color:#451a03}
+.back{margin-top:12px;width:100%;background:#334155;color:white}
+video{
+  width:100%;
+  max-width:440px;
+  margin:18px auto 0;
+  border-radius:22px;
+  border:2px solid rgba(96,165,250,.45);
+  display:none;
+}
+#result{
+  margin-top:14px;
+  padding:15px;
+  border-radius:18px;
+  font-weight:900;
+  line-height:1.5;
+  text-align:left;
+  white-space:pre-line;
+}
+.ok{background:#14532d;color:#dcfce7}
+.warn{background:#713f12;color:#fef3c7}
+.fail{background:#7f1d1d;color:#fee2e2}
+.hidden{display:none}
+@media(max-width:480px){
+  h1{font-size:24px}
+  .btnGrid{grid-template-columns:1fr}
+}
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+  <div class="hero">
+    <h1>SISTEM PONDOK PENGAWAL</h1>
+    <div class="sub">MRSM BETONG • E-SECURE Barcode Scanner</div>
+  </div>
+
+  <div class="card">
+    <img class="scanLogo" src="https://drive.google.com/thumbnail?id=1qg4pr6y-wY47ACBgVsEMj1Z4V8lskziW&sz=w200">
+
+    <div class="modeTitle">KAWALAN PERGERAKAN</div>
+    <div class="mode" id="modeText">KELUAR</div>
+
+    <input id="icPengawal" type="hidden">
+
+    <div class="btnGrid">
+      <button class="out" onclick="startScan('KELUAR')">SCAN KELUAR</button>
+      <button class="in" onclick="startScan('MASUK')">SCAN MASUK</button>
+    </div>
+
+    <button class="back" onclick="goBack()">KEMBALI KE DASHBOARD</button>
+
+    <video id="video" muted playsinline></video>
+    <div id="result" class="hidden"></div>
+  </div>
+
+</div>
+
+<script>
+const API_URL = "https://script.google.com/macros/s/AKfycbyPtBcDVQU6oVYIQ0UCudOEJnnmqLLV2NkbeXNeG_2wDh5KGg4SPKDeeQXsu0b2zG8DLA/exec";
+
+let mode = "KELUAR";
+let busy = false;
+let audioCtx = null;
+let controls = null;
+
+const params = new URLSearchParams(window.location.search);
+const icFromUrl = params.get("ic") || "";
+const jenisFromUrl = params.get("jenis") || "KELUAR";
+
+window.addEventListener("DOMContentLoaded", ()=>{
+  document.getElementById("icPengawal").value = icFromUrl;
+
+  mode = String(jenisFromUrl || "KELUAR").trim().toUpperCase();
+  if(mode !== "KELUAR" && mode !== "MASUK") mode = "KELUAR";
+
+  document.getElementById("modeText").innerText = mode;
+});
+
+async function startScan(jenis){
+  const ic = document.getElementById("icPengawal").value.trim();
+
+  if(!ic){
+    alert("Sila buka scanner melalui Sistem Pondok.");
+    return;
+  }
+
+  mode = jenis;
+  busy = false;
+  document.getElementById("modeText").innerText = mode;
+  document.getElementById("video").style.display = "block";
+  showResult("warn", "Kamera dibuka... Halakan pada barcode kad pelajar.");
+
+  try{
+    if(controls){
+      controls.stop();
+      controls = null;
+    }
+
+    const codeReader = new ZXingBrowser.BrowserMultiFormatReader();
+
+    const devices = await ZXingBrowser.BrowserCodeReader.listVideoInputDevices();
+
+    let selectedDeviceId = undefined;
+
+    if(devices && devices.length){
+      const backCam = devices.find(d =>
+        /back|rear|environment/i.test(d.label || "")
+      );
+      selectedDeviceId = backCam ? backCam.deviceId : devices[0].deviceId;
+    }
+
+    controls = await codeReader.decodeFromVideoDevice(
+      selectedDeviceId,
+      "video",
+      (result, err) => {
+        if(!result || busy) return;
+
+        busy = true;
+
+        let code = String(result.getText() || "").trim().toUpperCase();
+
+        const m = code.match(/ST\d+/);
+        if(m) code = m[0];
+
+        processScan(code);
+      }
+    );
+
+  }catch(err){
+    showResult("fail", "GAGAL buka kamera. Sila allow camera / buka di Chrome.\n" + (err.message || err));
+    beepDouble();
+  }
+}
+
+function processScan(noMaktab){
+  const ic = document.getElementById("icPengawal").value.trim();
+
+  showResult("warn", "Memproses: " + noMaktab);
+
+  fetch(API_URL,{
+    method:"POST",
+    body:JSON.stringify({
+      icPengawal:ic,
+      noMaktab:noMaktab,
+      jenisPergerakan:mode,
+      tindakanPengawal:"",
+      catatanManual:""
+    })
+  })
+  .then(r=>r.json())
+  .then(res=>{
+    const warna = String(res.warna || "").toUpperCase();
+    const cls = res.ok ? "ok" : (warna === "KUNING" ? "warn" : "fail");
+
+    showResult(cls,
+      (res.ok ? "✅ BERJAYA" : "❌ GAGAL") +
+      "\nNama: " + (res.nama || "-") +
+      "\nStatus: " + (res.statusPermohonan || "-") +
+      "\nMesej: " + (res.msg || "-")
+    );
+
+    if(res.ok) beepOnce();
+    else if(warna === "KUNING") beepTriple();
+    else beepDouble();
+
+    setTimeout(()=>{ busy = false; },1200);
+  })
+  .catch(err=>{
+    showResult("fail","ERROR API. Sila cuba semula.");
+    beepDouble();
+    busy = false;
+  });
+}
+
+function showResult(cls,msg){
+  const box = document.getElementById("result");
+  box.className = cls;
+  box.innerText = msg;
+}
+
+function goBack(){
+  if(controls){
+    controls.stop();
+    controls = null;
+  }
+  window.close();
+  history.back();
+}
+
+function getAudioCtx(){
+  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if(audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+
+function beepTone(freq,duration){
+  const ctx = getAudioCtx();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = "square";
+  osc.frequency.value = freq;
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  gain.gain.setValueAtTime(0.7,ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime + duration/1000);
+
+  osc.start();
+  osc.stop(ctx.currentTime + duration/1000);
+}
+
+function beepOnce(){ beepTone(1200,140); }
+function beepDouble(){
+  beepTone(900,180);
+  setTimeout(()=>beepTone(900,180),450);
+}
+function beepTriple(){
+  beepTone(1000,180);
+  setTimeout(()=>beepTone(1000,180),450);
+  setTimeout(()=>beepTone(1000,180),900);
+}
+</script>
+</body>
+</html>
