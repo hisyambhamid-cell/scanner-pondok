@@ -40,15 +40,7 @@ async function startScan(jenis){
   try{
     if(controls){ controls.stop(); controls = null; }
 
-    const hints = new Map();
-    hints.set(ZXingBrowser.DecodeHintType.TRY_HARDER, true);
-    hints.set(ZXingBrowser.DecodeHintType.POSSIBLE_FORMATS, [
-      ZXingBrowser.BarcodeFormat.CODE_128,
-      ZXingBrowser.BarcodeFormat.CODE_39,
-      ZXingBrowser.BarcodeFormat.EAN_13
-    ]);
-
-    const reader = new ZXingBrowser.BrowserMultiFormatReader(hints);
+    const reader = new ZXingBrowser.BrowserMultiFormatReader();
     const devices = await ZXingBrowser.BrowserCodeReader.listVideoInputDevices();
 
     let deviceId = undefined;
